@@ -1,0 +1,168 @@
+---
+title: "Analyze Sales"
+subtitle: "Part G / Use Data for Reporting & Analytics"
+author: "Bhanu Harsha Yanamadala"
+date: "03/11/25"
+output:
+  pdf_document:
+    keep_tex: true
+  html_document:
+    df_print: paged
+always_allow_html: true
+---
+
+```{r installAndLoadPackagesOnDemand, echo=FALSE, warning=FALSE, eval=TRUE}
+# Function for installing packages if they are not installed before.
+installPackages <- function(packages) {
+  # Installing required packages.
+  installedPackages <- packages %in% rownames(installed.packages())
+  if (any(installedPackages == FALSE)) {
+    install.packages(packages[!installedPackages])
+  }
+}
+
+
+# Function for loading required packages for querying.
+loadingRequiredPackages <- function(packages) {
+  # Loading required packages.
+  for (package in packages) {
+    suppressMessages({
+      library(package, character.only = TRUE)
+    })
+  }
+}
+
+packages <- c("DBI","RMySQL", "kableExtra", "tinytex")
+  
+installPackages(packages)
+loadingRequiredPackages(packages)
+```
+
+```{r dbConnection, echo=FALSE, warning=FALSE, eval=TRUE}
+# Function for connecting to the Aiven cloud database.
+dbConnection <- function() {
+  conn <- tryCatch(
+    dbConnect(
+  RMySQL::MySQL(),
+  user = Sys.getenv("DB_USER"),
+  password = Sys.getenv("DB_PASSWORD"),
+  dbname = Sys.getenv("DB_NAME"),
+  host = Sys.getenv("DB_HOST"),
+  port = as.integer(Sys.getenv("DB_PORT"))
+),
+    error = function(e) {
+      stop("Database connection failed: ", e$message)
+    }
+  )
+  return(conn)
+}
+
+conn <- dbConnection()
+```
+
+## **Analysis by Restaurant**
+This section provides a detailed breakdown of restaurant performance across key metrics. 
+  
+ **Total Visits**: Total number of customer visits per restaurant.  
+ **Unique Customers**: Distinct customers served, indicating reach.  
+ **Loyalty Customers**: Members enrolled in the loyalty program, reflecting customer retention.  
+ **Total Revenue**: Combined food and alcohol sales (excluding tips), showing revenue generation.  
+
+ 
+
+```{r restaurantAnalysis, echo=FALSE, warning=FALSE, eval=TRUE}
+# SQL query to  analyze to find the total number of visits, total number of unique customers, total number of customers in the loyalty program, and total spent on food and alcohol  by restaurant.
+sqlQueryforRestaurantDetails <- "
+SELECT 
+    r.RestaurantName AS `Restaurant Name`,
+    COUNT(v.VisitId) AS `Total Visits`,
+    COUNT(DISTINCT v.CustomerID) AS `Unique Customers`,
+    COUNT(DISTINCT CASE WHEN c.LoyaltyMember = TRUE THEN c.CustomerID END) AS `Loyalty Customers`,
+    SUM(b.FoodBill + COALESCE(b.AlcoholBill, 0)) AS `Total Revenue (FoodBill + AlcoholBill)`
+FROM VisitDetails v
+JOIN RestaurantDetails r ON v.RestaurantID = r.RestaurantID
+JOIN CustomerDetails c ON v.CustomerID = c.CustomerID
+JOIN BillDetails b ON v.VisitID = b.VisitID
+GROUP BY r.RestaurantName
+ORDER BY `Total Revenue (FoodBill + AlcoholBill)` DESC;
+"
+
+# Query Execution.
+result <- dbGetQuery(conn, sqlQueryforRestaurantDetails)
+
+#  kableExtra: for table creation and formatting.
+kable(result, format = "latex", booktabs = TRUE, caption = "Restaurant Revenue Analysis (Sorted by Total Revenue)", align = "c") %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    full_width = FALSE,
+    font_size = 10
+  ) %>%
+  column_spec(1, width = "3.5cm", bold = TRUE, border_right = TRUE) %>%  # Ensure border_right is logical
+  column_spec(2:4, width = "2cm", background = "#f9f9f9") %>%
+  column_spec(5, width = "3cm", bold = TRUE, color = "blue") %>%
+  row_spec(0, bold = TRUE, background = "#f9f9f9")
+```
+
+## **Analysis by Year**
+This table displays total revenue (food and alcohol, excluding tips), average per-party spending, and average party size by year across all restaurants.
+
+**Total Revenue**: Yearly food and alcohol sales.
+**Avg Per Party Spent**: Average spending per customer group.
+**Avg Party Size**: Typical group size, indicating seating demand.
+
+```{r yearAnalytics, echo=FALSE, warning=FALSE, eval=TRUE}
+# SQL query to analyze  the total revenue (food and alcohol sold, but not tips), average per party spent, and average party size by year. 
+sqlQueryByYear <- "
+SELECT 
+    YEAR(v.VisitDate) AS `Year`,
+    SUM(b.FoodBill + COALESCE(b.AlcoholBill, 0)) AS `Total Revenue (FoodBill + AlcoholBill)`,
+    ROUND(SUM(b.FoodBill + COALESCE(b.AlcoholBill, 0)) / COUNT(v.VisitID), 2) AS `Avg Per Party Spent`,
+    ROUND(AVG(v.PartySize), 2) AS `Avg Party Size`
+FROM VisitDetails v
+JOIN BillDetails b ON v.VisitId = b.VisitID
+GROUP BY `Year`
+ORDER BY `Year` ASC;
+"
+
+# query execution.
+resultByYear <- dbGetQuery(conn, sqlQueryByYear)
+
+# Format dynamically with years as columns
+kable(result, format = "latex", booktabs = TRUE, caption = "Restaurant Revenue Analysis (Sorted by Total Revenue)", align = "c") %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"),
+    full_width = FALSE,
+    font_size = 10
+  ) %>%
+  column_spec(1, width = "3.5cm", bold = TRUE, border_right = TRUE) %>%  # Ensure border_right is logical
+  column_spec(2:4, width = "2cm", background = "#f9f9f9") %>%
+  column_spec(5, width = "3cm", bold = TRUE, color = "blue") %>%
+  row_spec(0, bold = TRUE, background = "#f9f9f9") 
+```
+
+## **Trend by Year**
+The line chart below illustrates the trend in total revenue (foodBill and alcoholBill) over the years.
+```{r yearTrend, echo=FALSE, warning=FALSE, eval=TRUE, fig.width=14, fig.height=10}
+# Extract year and revenue data for plotting
+years <- resultByYear$Year
+revenue <- resultByYear$`Total Revenue (FoodBill + AlcoholBill)`
+
+# Create the line chart
+plot(years, revenue, type = "o", col = "black", lwd = 3, pch = 18,
+     xlab = "Year", ylab = "Total Revenue (FoodBill  + AlcoholBill)",
+     main = "Trend of Total Revenue by Year")
+
+# Add grid lines
+grid()
+
+# Add data labels
+text(years, revenue, labels = round(revenue, 2), pos = 3, cex = 0.9, col = "darkblue")
+
+# Add a legend
+legend("topleft", legend = "Total Revenue", col = "darkblue", lty = 1, lwd = 2, pch = 16)
+
+```
+
+```{r closeConnection, echo=FALSE, warning=FALSE, eval=TRUE}
+invisible(dbDisconnect(conn))
+```

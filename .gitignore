@@ -1,0 +1,28 @@
+# R Project Files
+.Rhistory
+.RData
+.Rproj.user/
+
+# R Markdown outputs
+*.html
+*_cache/
+*_files/
+*.log
+*.tex
+
+# Sensitive Data
+*password*
+*credentials*
+.env
+
+# Operating System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary Files
+*.tmp
+~$*

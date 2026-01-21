@@ -1,6 +1,9 @@
+
 # Restaurant Database Management System
 
----
+A relational database management system designed using normalization (3NF) to analyze restaurant visits, billing transactions, and revenue patterns for business decision-making.
+
+--
 
 ## Project Overview
 This project focuses on designing and implementing a **relational database
